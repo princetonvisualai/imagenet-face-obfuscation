@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <title>ImageNet Blurring</title>
+    <script
+      src="https://code.jquery.com/jquery-3.4.1.min.js"
+      integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+      crossorigin="anonymous"
+    ></script>
+    <script src="https://unpkg.com/react@16/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@16/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@material-ui/core@4.9.7/umd/material-ui.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js" crossorigin></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/3.4.0/fabric.min.js" crossorigin></script>
+    <link href="//maxcdn.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css" rel="stylesheet">
+    <style>
+        .instruction {
+            text-align: center;
+            margin: auto;
+        }
+        ul {
+            text-align: left;
+            display: inline-block;
+        }
+        .canvas-container {
+            margin: 0 auto;
+        }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="react-root"></div>
+    <script type="text/json" id="input">
+      {{ input }}
+    </script>
+    <form id="results-form" method="post" action="dummy" class="text-center">
+      <input type="hidden" value="" name="assignmentId" id="assignmentId" />
+      <input type="hidden" value="" name="output" id="output" />
+      <input type="submit" class="btn btn-lg btn-success" id="submit-btn" value="Submit" disabled hidden />          
+    </form>
+    <script>
+'use strict'
+
+class SimpleAMT
+{
+    get_url_param(name) 
+    {
+        const match = RegExp('[?&]' + name + '=([^&]*)').exec(window.location.search);
+        return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : null;
+    }
+  
+
+    get_input(default_input) 
+    {
+        if (typeof(default_input) === 'undefined')
+        {
+            default_input = null;
+        }
+        try 
+        {
+            return JSON.parse($('#input').html());
+        } catch (e) 
+        {
+            return default_input;
+        }
+    }
+
+  
+    set_output(output) 
+    {
+        $('#output').val(JSON.stringify(output));
+    }
+  
+    is_preview() 
+    {
+        const assignment_id = this.get_url_param('assignmentId');
+        if (assignment_id === null)
+        {
+            return false;
+        }
+        return assignment_id === 'ASSIGNMENT_ID_NOT_AVAILABLE';
+    }
+  
+    setup_submit() 
+    {
+        const submit_to = this.get_url_param('turkSubmitTo');
+        $('#results-form').attr('action', submit_to + '/mturk/externalSubmit');                      
+        $('#assignmentId').val(this.get_url_param('assignmentId'));
+    }
+
+}
+    </script>
+
+    <script type="text/babel">
+'use strict'
+
+const {Button, Container, MobileStepper, Icon, Dialog, DialogTitle, DialogContent, DialogActions} = MaterialUI;
+
+// a bounding box is represented as a list of four integers: [x0, y0, x1, y1]
+// where (x0, y0) is the coordinate of its top-left corner (in terms of pixels)
+// and (x1, y1) is the coordinate of its bottom-right corner
+// the origin of the coordinate system lies at the top-left corner of the entire image
+// the x-axis points to the right and the y-axis points to the bottom 
+// as a result, 0 <= x0 < x1 < image_width and 0 <= y0 < y1 < image_height always hold
+const DEFAULT_INPUT = [];
+
+// Default zoom level to maintain
+const ZOOM = 1;
+
+// Keep track of zoom point (if used)
+let zooms = [];
+
+// Canvas max length
+const MAX_LENGTH = 600;
+
+// IoU threshold for validation questions
+const IoU_threshold = 0.72;
+
+// The total number of errors a worker can make before resetting the HIT
+const TOTAL_NUM_LIVES = 2;
+
+
+class FeedbackDialog extends React.Component
+{
+    constructor(props)
+    {
+        super(props);
+    }
+
+
+    transform_url(img_url)
+    {
+        return 'https://imgamtserv.cs.princeton.edu/gold_standard/' + img_url.split('/').pop();
+    }
+
+
+    render()
+    {
+        const failed = (this.props.num_lives <= 0);
+        const buttons = failed ? (
+          <DialogActions>
+            <Button variant="contained" onClick={this.props.onClose} color="primary" disabled>
+              Continue
+            </Button>
+            <Button variant="contained" onClick={this.props.restart} color="secondary" autoFocus>
+              Restart
+            </Button>
+          </DialogActions>
+        ) : (
+          <DialogActions>
+            <Button variant="contained" onClick={this.props.onClose} color="primary" autoFocus>
+              Continue
+            </Button>
+            <Button variant="contained" onClick={this.props.restart} color="secondary" disabled>
+              Restart
+            </Button>
+          </DialogActions>
+        );
+
+        return (
+        <Dialog 
+          open={this.props.open}
+        >
+          <DialogTitle>You made an error</DialogTitle>
+          <DialogContent>
+            <h4>The correct answer is: </h4>
+            {/* <img src={this.transform_url(this.props.url)} width="640" /> */}
+            <img src={'http://localhost:9000/'+this.props.url.split('/').pop()}/>
+            <p>You have <font color="red"><strong>{this.props.num_lives}</strong></font> lives left before having to restart the HIT from scratch.</p>
+          {buttons}
+          </DialogContent>
+        </Dialog>
+        );
+    }
+}
+
+
+class App extends React.Component
+{
+    constructor(props)
+    {
+        super(props);
+        this.simpleamt = new SimpleAMT();
+        this.state = { 
+            urls: this.simpleamt.get_input(DEFAULT_INPUT),
+            active_idx: 0,
+            feedback_on: false,
+            img_loading: false,
+            num_lives: TOTAL_NUM_LIVES,
+            canvases: {},
+            changes: {},
+            original_canvas: {}
+        };
+    }
+
+
+    componentDidMount()
+    {
+        this.canvas = new fabric.Canvas('fabric-canvas');
+        const canvas = this.canvas;
+
+        // Add document keydown event listener
+        document.addEventListener('keydown', this.handle_key_press);
+
+        // Increase the number of decimal places to round to
+        fabric.Object.NUM_FRACTION_DIGITS = 12;
+
+        canvas.on('object:added', () => {
+            // First object added is always the image, make sure
+            // it's set to be selectable is false, so user can continue
+            // to draw bounding boxes on the image
+            canvas.item(0).set('selectable', false);
+        });
+
+        canvas.on('after:render', () => {
+            canvas.calcOffset();
+        });
+
+        canvas.on('mouse:wheel', opt => {
+            const delta = opt.e.deltaY;
+            const pointer = canvas.getPointer(opt.e);
+            const zoom = Math.max(Math.min(canvas.getZoom() + delta / 200, 10), 0.5);
+            canvas.zoomToPoint({x: opt.e.offsetX, y: opt.e.offsetY}, zoom);
+
+            // Keep track of the zoom points to reverse the zoom later
+            let zoom_pt = {} 
+            zoom_pt['pointer'] = pointer;
+            zoom_pt['x'] = opt.e.offsetX;
+            zoom_pt['y'] = opt.e.offsetY;
+            zoom_pt['zoom'] = zoom;
+            zooms.push(zoom_pt);
+
+            opt.e.preventDefault();
+            opt.e.stopPropagation();
+        });
+
+        canvas.on('mouse:down', function(opt) {
+            let pt = null;
+            if (opt.e instanceof MouseEvent)
+            {
+                pt = opt.e;
+            } else
+            {
+                console.assert(opt.e instanceof TouchEvent && opt.e.type === 'touchstart');
+                pt = opt.e.changedTouches[0];
+            }
+            const selected = canvas.getActiveObjects();
+            if (selected.length !== 0)
+            {
+                return;
+            }
+            const transform = fabric.util.invertTransform(canvas.viewportTransform);
+            // Switch from clientX to pageX so rect doesn't move after scrolling
+            this.start_point = fabric.util.transformPoint({x: pt.pageX - canvas._offset.left, 
+                                                           y: pt.pageY - canvas._offset.top}, transform);
+        });
+
+        canvas.on('mouse:up', function(opt) {
+            let pt = null;
+            if (opt.e instanceof MouseEvent)
+            {
+                pt = opt.e;
+            } else
+            {
+                console.assert(opt.e instanceof TouchEvent && opt.e.type === 'touchend');
+                pt = opt.e.changedTouches[0];
+            }
+            const selected = canvas.getActiveObjects();
+            if (selected.length !== 0)
+            {
+                return;
+            }
+            const transform = fabric.util.invertTransform(canvas.viewportTransform);
+            // Switch from clientX to pageX
+            this.end_point = fabric.util.transformPoint({x: pt.pageX - canvas._offset.left, 
+                                                         y: pt.pageY - canvas._offset.top}, transform);
+            // draw the new rectangle
+            const width = Math.abs(this.start_point.x - this.end_point.x);
+            const height = Math.abs(this.start_point.y - this.end_point.y);
+            if (width > 0 && height > 0)
+            {
+                const rect = new fabric.Rect({
+                    left: Math.min(this.start_point.x, this.end_point.x),
+                    top: Math.min(this.start_point.y, this.end_point.y),
+                    fill: 'red',
+                    width: width,
+                    height: height,
+                    hasRotatingPoint: false,
+                });
+                canvas.add(rect);
+            }
+            this.start_point = null; 
+        });
+
+        this.setState({img_loading: true}, () => {
+            fabric.Image.fromURL(this.state.urls[this.state.active_idx].url, img => {
+                //canvas.setDimensions({width: img.width, height: img.height});
+                let scale = this.get_canvas_scale(img);
+                let can_width = img.width * scale;
+                let can_height = img.height * scale;
+                this.canvas.setDimensions({width: can_width, height: can_height});
+                //this.canvas.calcOffset();
+                img.set('selectable', false);
+                img.set({
+                    scaleX: scale,
+                    scaleY: scale
+                });
+                canvas.add(img)
+
+                // Draw initial bounding boxes
+                for (let i = 0; i < this.state.urls[this.state.active_idx].bboxes.length; i++) {
+                    // draw the new rectangle
+                    const box = this.state.urls[this.state.active_idx].bboxes[i];
+                    //const width = Math.abs(box.x1 - box.x0);
+                    //const height = Math.abs(box.y1 - box.y0);
+                    // Make sure to scale the rectangles
+                    const width = Math.abs(box.x1 * scale - box.x0 * scale);
+                    const height = Math.abs(box.y1 * scale - box.y0 * scale);
+                    if (width > 0 && height > 0)
+                    {
+                        const rect = new fabric.Rect({
+                            left: Math.min(box.x0 * scale, box.x1 * scale),
+                            top: Math.min(box.y0 * scale, box.y1 * scale),
+                            fill: 'red',
+                            width: width,
+                            height: height,
+                            hasRotatingPoint: false,
+                        });
+                        this.canvas.add(rect);
+                    }
+                }
+                this.setState((state, _) => {
+                    // Initialize the dictionary keeping track of images that changed
+                    let changes = {...this.state.changes};
+                    for (let i = this.state.active_idx; i < this.state.urls.length; i++) {
+                        changes[i] = false;
+                    }
+                    // Initialize the dictionary keeping track of the original canvas
+                    let original_canvas = {...this.state.original_canvas};
+                    original_canvas[state.active_idx] = JSON.stringify(this.canvas);
+                    return {
+                        changes, 
+                        original_canvas,
+                        img_loading: false
+                    };
+                });
+            });
+        });
+
+
+
+        document.onkeydown = e => {
+            if (e.keyCode === 8 || e.keyCode === 27)
+            {
+                for (const obj of canvas.getActiveObjects())
+                {
+                    canvas.remove(obj);
+                }
+            }
+        }
+    }
+
+
+    componentDidUpdate(prevProps, prevState) {
+        // For some reason, React is rerendering even when the index did not change, so to prevent
+        // unnecessary rerenders, check the index
+        if (this.state.active_idx === prevState.active_idx) {
+            return;
+        }
+        // Keep only 1 image displayed on the canvas at a time
+        this.canvas.clear();
+        // Reset the zoom to original 100% wrt. zoomed in points
+        if (this.canvas.getZoom() !== ZOOM || zooms.length > 0) {
+            while (zooms.length > 0) {
+                let pt = zooms.pop();
+                this.canvas.zoomToPoint({x: pt['x'], y: pt['y']}, pt['zoom']);
+                // Check if last point, return it to original zoom
+                if (zooms.length === 0) {
+                    this.canvas.zoomToPoint({x: pt['x'], y: pt['y']}, ZOOM);
+                }
+            }
+            // Previous method to fix zoom: keep track of one zoomed point and reset
+            // to zoom of 1, but can't handle case of multiple zoom points
+            //this.canvas.zoomToPoint({x: zoom_pt['x'], y: zoom_pt['y']}, ZOOM);
+        }
+        if (this.state.active_idx in this.state.canvases) {
+            // If already added the image, load its previous state.
+            // Note that when canvas is loaded, the image displayed loses
+            // its selectable=false setting, so that needs to be added again.
+            // Img is set to be selectable=false in callback function when object is added 
+            this.setState({img_loading: true}, () => {
+                fabric.Image.fromURL(this.state.urls[this.state.active_idx].url, img => {
+                    this.canvas.loadFromJSON(this.state.canvases[this.state.active_idx],
+                        this.canvas.renderAll.bind(this.canvas));
+                    //this.canvas.setDimensions({width: img.width, height: img.height});
+                    let scale = this.get_canvas_scale(img);
+                    let can_width = img.width * scale;
+                    let can_height = img.height * scale;
+                    this.canvas.setDimensions({width: can_width, height: can_height});
+                    this.setState({img_loading: false});
+                });
+            });
+
+        } else {
+            // For new image, add it to canvas
+            this.setState({img_loading: true}, () => {
+                fabric.Image.fromURL(this.state.urls[this.state.active_idx].url, img => {
+                    //this.canvas.setDimensions({width: img.width, height: img.height});
+                    let scale = this.get_canvas_scale(img);
+                    let can_width = img.width * scale;
+                    let can_height = img.height * scale;
+                    this.canvas.setDimensions({width: can_width, height: can_height});
+                    img.set('selectable', false);
+                    // Resize img so the longest side is MAX_LENGTH
+                    img.set({
+                        scaleX: scale,
+                        scaleY: scale
+                    });
+                    this.canvas.add(img);
+
+                    // Draw initial bounding boxes
+                    for (let i = 0; i < this.state.urls[this.state.active_idx].bboxes.length; i++) {
+                        // draw the new rectangle
+                        const box = this.state.urls[this.state.active_idx].bboxes[i];
+                        //const width = Math.abs(box.x1 - box.x0);
+                        //const height = Math.abs(box.y1 - box.y0);
+                        const width = Math.abs(box.x1 * scale - box.x0 * scale);
+                        const height = Math.abs(box.y1 * scale - box.y0 * scale);
+                        if (width > 0 && height > 0)
+                        {
+                            const rect = new fabric.Rect({
+                                left: Math.min(box.x0 * scale, box.x1 * scale),
+                                top: Math.min(box.y0 * scale, box.y1 * scale),
+                                //left: Math.min(box.x0, box.x1),
+                                //top: Math.min(box.y0, box.y1),
+                                fill: 'red',
+                                width: width,
+                                height: height,
+                                hasRotatingPoint: false,
+                            });
+                            this.canvas.add(rect);
+                        }
+                    }
+                    this.setState((state, _) => {
+                        // Initialize the dictionary keeping track of images that changed
+                        let original_canvas = {...this.state.original_canvas};
+                        original_canvas[state.active_idx] = JSON.stringify(this.canvas);
+                        return {
+                            original_canvas,
+                            img_loading: false
+                        };
+                    });
+                });
+            });
+        }
+    }
+
+
+    submit()
+    {
+        let result = {...this.state.canvases};
+        result[this.state.active_idx] = JSON.stringify(this.canvas);
+
+        // Check if changes were made
+        let changes = {...this.state.changes};
+        if (this.state.original_canvas[this.state.active_idx] !== result[this.state.active_idx]) {
+            changes[this.state.active_idx] = true;
+        } else {
+            changes[this.state.active_idx] = false;
+        }
+        // Map image source to list of bounding boxes
+        let bounding_boxes = [];
+        for (let i in result) {
+            let obj = JSON.parse(result[i]).objects;
+            // Keep track of bounding boxes for an image
+            let boxes = {};
+            boxes['refined_bboxes'] = [];
+            let img = '';
+            let scale = 1;
+            for (let js in obj) {
+                // Get the scaling done to the images
+                if (obj[js].type === 'image') {
+                    img = obj[js].src;
+                    scale = obj[js].scaleX;
+                }
+                else if (obj[js].type === 'rect') {
+                    boxes['refined_bboxes'].push({
+                        'x0': obj[js].left / scale,
+                        'x1': obj[js].left / scale + obj[js].width / scale,
+                        'y0': obj[js].top / scale,
+                        'y1': obj[js].top / scale + obj[js].height / scale,
+                    });
+                }
+            }
+            boxes['url'] = img;
+            boxes['change'] = changes[i];
+            if ('ground_truth_bboxes' in this.state.urls[i])
+            {
+                boxes['ground_truth_bboxes'] = this.state.urls[i]['ground_truth_bboxes'].slice(0)
+            }
+            bounding_boxes.push(boxes);
+        }
+        //console.log(bounding_boxes);
+        this.simpleamt.set_output(bounding_boxes);
+        this.simpleamt.setup_submit();
+        if (!this.simpleamt.is_preview())
+        {
+            $('#results-form').submit();
+        } else
+        {
+            alert('Unable to submit in preview mode. Please accept the HIT.');
+        }
+    }
+
+
+    get_canvas_scale(img) {
+        // Set canvas dimensions to MAX_LENGTH, based on longer side
+        let longer_side = "width";
+        if (img.height > img.width) {
+            longer_side = "height";
+        }
+        // Calculate scaling
+        let scale = 1;
+        if (longer_side === "height") {
+            scale = MAX_LENGTH / img.height;
+        } else {
+            scale = MAX_LENGTH / img.width;
+        }
+        return scale;
+    }
+
+
+    IoU(bbox_1, bbox_2)
+    {
+        const delta_x = Math.max(0, Math.min(bbox_1['x1'] - bbox_2['x0'], bbox_2['x1'] - bbox_1['x0']))
+        const delta_y = Math.max(0, Math.min(bbox_1['y1'] - bbox_2['y0'], bbox_2['y1'] - bbox_1['y0']))
+        const intersection = delta_x * delta_y;
+        const union = (bbox_1['x1'] - bbox_1['x0']) * (bbox_1['y1'] - bbox_1['y0']) + (bbox_2['x1'] - bbox_2['x0']) * (bbox_2['y1'] - bbox_2['y0']) - intersection;
+        return intersection / union;
+    }
+
+
+    IoU_array(gt_array, pred_array) {
+        let and = 0;
+        let or = 0;
+        // Get the dimensions of the canvas
+        let width = gt_array.length;
+        let height = gt_array[0].length;
+
+        for (let i = 0; i < width; i++) {
+            for (let j = 0; j < height; j++) {
+                //bitwise and operator
+                if (gt_array[i][j] & pred_array[i][j]) {
+                    and += 1
+                }
+                //bitwise or operator
+                if (gt_array[i][j] | pred_array[i][j]) {
+                    or += 1
+                }
+            }
+        }
+
+        // Intersection over union
+        const result = and / or;
+        return result;
+    }
+
+
+    convert_boxes_to_arrays(gt_bboxes, pred_bboxes, scale) {
+        // Get the dimensions of the canvas
+        let width = Math.ceil(this.canvas.getWidth());
+        let height = Math.ceil(this.canvas.getHeight());
+
+        // Create arrays for both
+        let A = new Array(width);
+        let B = new Array(width);
+
+        for (let i = 0; i < width; i++) {
+            A[i] = new Array(height).fill(0);
+            B[i] = new Array(height).fill(0);
+        }
+
+        // Create the masks based on bounding boxes
+        for (let gt_bbox of gt_bboxes) {
+            // Need scaling to match the canvas dimensions with respect to original coordinates
+            let x_start = gt_bbox['x0'] * scale;
+            let x_len = (gt_bbox['x1'] - gt_bbox['x0']) * scale;
+            let y_start = gt_bbox['y0'] * scale;
+            let y_len = (gt_bbox['y1'] - gt_bbox['y0']) * scale;
+
+            for (let i = Math.round(x_start); i <= Math.min(Math.round(x_start + x_len), width - 1); i++) {
+                for (let j = Math.round(y_start); j <= Math.min(Math.round(y_start + y_len), height - 1); j++) {
+                    if (i > width || i < 0 || j > height || j < 0) {
+                        continue;
+                    } else {
+                        A[i][j] = 1;
+                    }
+                }
+            }
+        }
+
+        for (let pred_bbox of pred_bboxes) {
+            let x_start = pred_bbox['x0'] * scale;
+            let x_len = (pred_bbox['x1'] - pred_bbox['x0']) * scale;
+            let y_start = pred_bbox['y0'] * scale;
+            let y_len = (pred_bbox['y1'] - pred_bbox['y0']) * scale;
+
+            for (let i = Math.round(x_start); i <= Math.min(Math.round(x_start + x_len), width - 1); i++) {
+                for (let j = Math.round(y_start); j <= Math.min(Math.round(y_start + y_len), height - 1); j++) {
+                    if (i > width || i < 0 || j > height || j < 0) {
+                        continue;
+                    } else {
+                        B[i][j] = 1;
+                    }
+                }
+            }
+        }
+
+        return [A, B];
+    }
+
+
+    check_ground_truth(idx)
+    {
+        // Keep track of bounding boxes for an image
+        const objects = JSON.parse(JSON.stringify(this.canvas)).objects;
+        let refined_bboxes = [];
+        let scale = 1;
+        for (let obj of objects) {
+            // Get the scaling done to the images
+            if (obj.type === 'image') {
+                scale = obj.scaleX;
+            }
+            else if (obj.type === 'rect') {
+                refined_bboxes.push({
+                    'x0': obj.left / scale,
+                    'x1': obj.left / scale + obj.width / scale,
+                    'y0': obj.top / scale,
+                    'y1': obj.top / scale + obj.height / scale,
+                });
+            }
+        }
+
+        const gt_bboxes = this.state.urls[idx].ground_truth_bboxes;
+        const pred_bboxes = JSON.parse(JSON.stringify(refined_bboxes));
+
+        // Convert bounding boxes to arrays
+        const arrays = this.convert_boxes_to_arrays(gt_bboxes, pred_bboxes, scale);
+        const gt_array = arrays[0];
+        const pred_array = arrays[1];
+
+        // Special case, when there are no ground_truth_bboxes
+        if (gt_bboxes.length === 0) {
+            if (gt_bboxes.length === refined_bboxes.length) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        // Normal case when there are ground_truth_bboxes
+        const IoU = this.IoU_array(gt_array, pred_array);
+        console.log(IoU);
+        if (IoU >= IoU_threshold)
+        {
+            return true;
+        } else
+        {
+            //alert(`There are ${gt_bboxes.length} sensitive areas in this image. You have identified ${refined_bboxes.length}, and ${TP} of them are accurate. Please re-try.`);
+            return false;
+        }
+    }
+
+
+
+    handle_next()
+    {
+        if (!this.state.img_loading) {
+            this.setState((state, _) => {
+                if ('ground_truth_bboxes' in state.urls[state.active_idx] && !this.check_ground_truth(state.active_idx))
+                {
+                    return {feedback_on: true, num_lives: state.num_lives - 1};
+                }
+                let canvases = {...this.state.canvases};
+                //Keep track of the current state of the canvas
+                canvases[state.active_idx] = JSON.stringify(this.canvas);
+
+                // Check if changes were made
+                let changes = {...this.state.changes};
+                if (this.state.original_canvas[state.active_idx] !== canvases[state.active_idx]) {
+                    changes[state.active_idx] = true;
+                } else {
+                    changes[state.active_idx] = false;
+                }
+
+                if (state.active_idx === state.urls.length - 1)  // the last panel
+                {
+                    this.submit();
+                    return {canvases, changes};
+                } else
+                {
+                    return {
+                        canvases,
+                        changes,
+                        active_idx: state.active_idx + 1
+                    };
+                }
+            });
+        }
+
+    }
+
+
+    handle_prev()
+    {
+        if (!this.state.img_loading) {
+            this.setState((state, _) => {
+                if (state.active_idx > 0) {
+                    console.assert(state.active_idx > 0);
+                    let canvases = {...this.state.canvases};
+                    canvases[state.active_idx] = JSON.stringify(this.canvas);
+                    // Check if changes were made
+                    let changes = {...this.state.changes};
+                    if (this.state.original_canvas[state.active_idx] !== canvases[state.active_idx]) {
+                        changes[state.active_idx] = true;
+                    } else {
+                        changes[state.active_idx] = false;
+                    }
+                    return {
+                        canvases,
+                        changes,
+                        active_idx: state.active_idx - 1
+                    };
+                }
+            });
+        }
+    }
+
+
+    handle_key_press = event => {
+        // handle right arrow
+        if (event.key === 'ArrowRight' || event.key === 'd'){
+            this.handle_next();
+        }
+        else if (event.key === 'ArrowLeft' || event.key === 'a') {
+            // Handle left arrow
+            this.handle_prev();
+        }
+    }
+
+
+    close_feedback()
+    {
+        this.setState({
+            feedback_on: false,
+            img_loading: false
+        });
+    }
+
+
+    handle_restart()
+    {
+        this.setState({
+            feedback_on: false,
+            img_loading: false,
+            active_idx: 0,
+            num_lives: TOTAL_NUM_LIVES,
+            canvases: {},
+            changes: {}
+        });
+    }
+
+
+    render()
+    {
+        return (
+            <Container maxWidth="sm">
+              <div className="instruction">
+                <p>Please draw rectangles on the image to cover all</p>
+                <ul>
+                  <li>human faces</li>
+                  <li>content that is NSFW (nudity, sexuality, profanity, violence, etc.)</li>
+                </ul>
+                <p>There are existing rectangles on some images. You have to adjust them if they are not accurate enough, delete them if the areas they cover are not sensitive areas, and draw new rectangles if existing ones fail to cover all sensitive areas.</p>
+              </div>
+              
+                <canvas id="fabric-canvas"></canvas>
+                <MobileStepper 
+                  steps={this.state.urls.length}
+                  variant="text"
+                  activeStep={this.state.active_idx}
+                  position="static"
+                  nextButton={
+                    <Button size="small" onClick={this.handle_next.bind(this)} disabled={this.state.img_loading}>
+                      {this.state.active_idx === this.state.urls.length - 1 ? 'Submit' : 'Next'}
+                      {this.state.active_idx === this.state.urls.length - 1 ? 
+                        <Icon style={ {margin: 5} } className="fa fa-share-square" /> :
+                        <Icon style={ {margin: 5} } className="fa fa-arrow-right" />}  
+                    </Button>
+                  }
+                  backButton={
+                    <Button size="small" onClick={this.handle_prev.bind(this)} disabled={this.state.active_idx === 0 || this.state.img_loading}>
+                      <Icon style={ {margin: 5} } className="fa fa-arrow-left" />
+                      Previous
+                    </Button>
+                  }
+                />
+                
+              
+              <div className="instruction">
+                <ul>
+                  <li>To draw a rectangle: press - drag - release</li>
+                  <li>To adjust an existing rectangle, first select it</li>
+                  <li>To delete a rectangle: select it and press ESC or DELETE on the keyboard</li>
+                  <li>To zoom in and out: scroll the mouse wheel on the image</li>
+                  <li>Keyboard shortcuts for switching between images: left arrow or "A" for PREVIOUS, right arrow or "D" for NEXT. (When a new HIT is just loaded, first click anywhere on the page to activate the shortcuts)</li>
+                  <li>How much area to cover? For a face, the rectangle you draw should cover at least the mouth, nose, eyes, forehead and cheeks. For NSFW area, use your best judgement.</li>
+                  <li>When two faces are close to each other, it's OK to draw a single rectangle to cover both</li>
+                  <li>What if there are too many small faces? Feel free to ignore faces that are too small to be recognized.</li>
+                  <li>Tips: Skip images that do not contain people. This will save you much time.</li>
+                </ul>
+              </div>
+
+              <FeedbackDialog 
+                open={this.state.feedback_on}
+                onClose={this.close_feedback.bind(this)}
+                url={this.state.urls[this.state.active_idx].url}
+                num_lives={this.state.num_lives}
+                restart={this.handle_restart.bind(this)}
+              />
+            </Container>
+        );
+    }
+}
+
+ReactDOM.render(<App />, document.getElementById('react-root'));
+
+    </script>
+  </body>
+</html>

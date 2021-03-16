@@ -1,0 +1,5 @@
+FACE_ANNOTATIONS_PATH = "data/face_annotations_ILSVRC.json"
+TRAIN_IMAGES_PATH = "data/train"
+VAL_IMAGES_PATH = "data/val"
+EVAL_PICKLES_PATH = "eval_pickles/"
+SORTED_WNIDS_PATH = "data/sorted_wnids.json"

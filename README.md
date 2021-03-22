@@ -132,7 +132,7 @@ To produce Table B in the paper:
 python analysis/overall_accuracy_overlay.py
 ```
 ```
-model               top1 original    top1 overlayred      top1 diff  top5 original    top5 overlayred      top5 diff
+model               top1 original    top1 overlayed      top1 diff  top5 original    top5 overlayed      top5 diff
 ------------------  ---------------  -----------------  -----------  ---------------  -----------------  -----------
 alexnet             56.043 +- 0.258  55.474 +- 0.236          0.569  78.835 +- 0.115  78.172 +- 0.187          0.663
 squeezenet1_0       55.989 +- 0.179  55.039 +- 0.221          0.95   78.602 +- 0.172  77.633 +- 0.108          0.969

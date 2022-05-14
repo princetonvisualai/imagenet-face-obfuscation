@@ -10,11 +10,11 @@ Code for the paper:
 
 
  ```
-@article{yang2021imagenetfaces,
+@inproceedings{yang2021imagenetfaces,
   title={A Study of Face Obfuscation in ImageNet},
   author={Yang, Kaiyu and Yau, Jacqueline and Fei-Fei, Li and Deng, Jia and Russakovsky, Olga},
-  journal={arXiv preprint arXiv:2103.06191},
-  year={2021}
+  booktitle={International Conference on Machine Learning (ICML)}
+  year={2022}
 }
 ```
 

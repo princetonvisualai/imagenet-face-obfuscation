@@ -9,7 +9,7 @@ Code for the paper:
 [Kaiyu Yang](https://www.cs.princeton.edu/~kaiyuy/), [Jacqueline Yau](https://www.linkedin.com/in/jacqueline-yau-836b0a132/), [Li Fei-Fei](https://profiles.stanford.edu/fei-fei-li), [Jia Deng](https://www.cs.princeton.edu/~jiadeng/), and [Olga Russakovsky](https://www.cs.princeton.edu/~olgarus/)    
 
 
- ```
+ ```bibtex
 @inproceedings{yang2021imagenetfaces,
   title={A Study of Face Obfuscation in ImageNet},
   author={Yang, Kaiyu and Yau, Jacqueline and Fei-Fei, Li and Deng, Jia and Russakovsky, Olga},
@@ -42,11 +42,11 @@ Save the original images to `data/train/` and `data/val/`; save the blurred imag
 
 [experiments/trainval.py](./experiments/trainval.py) is the script for training and validation. It is based on an [example](https://github.com/pytorch/examples/tree/master/imagenet) from PyTorch with only minor changes. Most command-line options in the original example still apply. Please refer to the original [documentation](https://github.com/pytorch/examples/blob/master/imagenet/README.md) for details.  
 For example, to train a ResNet18 on a single GPU.
-```
+```bash
 python experiments/trainval.py -a resnet18 --learning-rate 0.1 --gpu 0
 ```
 To train a ResNet50 on all GPUs on the current node:
-```
+```bash
 python experiments/trainval.py -a resnet50 --learning-rate 0.1 --dist-url 'tcp://127.0.0.1:6666' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0
 ```
 
@@ -59,12 +59,12 @@ We add a few additional command-line options for training/evaluating on face-obf
 * `--overlay`: Use overlayed images for both training and validation. It cannot co-occur with `--blur-train` or `--blur-val`.  
 
 For example, to train and evaluate an AlexNet on face-blurred images:
-```
+```bash
 python experiments/trainval.py -a alexnet --learning_rate 0.01 --gpu 0 --blur-train --blur-val --exp-id alexnet_blurred_train_blurred_val
 ```
 
 To train a ResNet152 on face-blurred images but evalaute on original images:
-```
+```bash
 python experiments/trainval.py -a resnet152 --learning-rate 0.1 --dist-url 'tcp://127.0.0.1:6667' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 --blur-train --exp-id hello_my_experiment
 ```
 
@@ -80,7 +80,7 @@ Please first make sure validation pickle files are in `eval_pickles/` and face a
 
 #### Faces in different supercategories 
 To produce Table 2 in the paper:
-```
+```bash
 python analysis/supercategories.py
 ```
 ```
@@ -95,7 +95,7 @@ insect.n.01                         27      35097           1.80642
 
 #### Faces in different categories
 To produce Figure 2 in the paper:
-```
+```bash
 python analysis/num_images.py
 ```
 ![num_images_per_category](analysis/num_images_per_category.jpg)
@@ -104,7 +104,7 @@ python analysis/num_images.py
 
 #### Overall validation accuracy
 To produce Table 3 in the paper:
-```
+```bash
 python analysis/overall_accuracy.py
 ```
 ```
@@ -129,7 +129,7 @@ average             70.023           69.368                 0.655  89.048       
 ```
 
 To produce Table B in the paper:
-```
+```bash
 python analysis/overall_accuracy_overlay.py
 ```
 ```
@@ -156,7 +156,7 @@ average             70.023           69.126                   0.897  89.048     
 
 #### Category-wise accuracies
 To produce Table 4 in the paper:
-```
+```bash
 python analysis/categorywise_accuracies.py
 ```
 ```

@@ -173,6 +173,12 @@ green_lizard.n.01        42.000 +- 0.566  45.556 +- 1.238       -3.556  91.289 +
 ```
 
 
+## Face Blurring
+
+ * [experiments/blurring.py](experiments/blurring.py): Our original implementation.
+ * [minimalBlur](https://github.com/dfouhey/minimalBlur): Improved version by David Fouhey.
+
+
 ## Credits
 
 * The code for training and evaluating models on ILSVRC is based on [an official PyTorch example](https://github.com/pytorch/examples/tree/master/imagenet). 

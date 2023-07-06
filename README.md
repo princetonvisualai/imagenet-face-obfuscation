@@ -68,9 +68,7 @@ To train a ResNet152 on face-blurred images but evalaute on original images:
 python experiments/trainval.py -a resnet152 --learning-rate 0.1 --dist-url 'tcp://127.0.0.1:6667' --dist-backend 'nccl' --multiprocessing-distributed --world-size 1 --rank 0 --blur-train --exp-id hello_my_experiment
 ```
 
-Models pretrained on face-blurred images are available for download [here](https://drive.google.com/drive/folders/1kr_IMocyg8hTSMWY_yzif4_tUVyHCiYU?usp=sharing).
-
-Our validation results for all models are available [here](https://drive.google.com/drive/folders/1xbjmrjfyCO-56WCBay7IKpP_c6kgmR2p?usp=sharing). Before the next step, please download these pickle files to `eval_pickles/`. You could also run the training script to produce them by yourself.  
+Models pretrained on face-blurred images and their validation results are available for download [here](https://huggingface.co/kaiyuy/imagenet-blur-pretrained-models/tree/main). Before the next step, please download these pickle files to `eval_pickles/`. You could also run the training script to produce them by yourself.  
 
 
 ## Analyses

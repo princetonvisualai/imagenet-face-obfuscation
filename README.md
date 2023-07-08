@@ -6,7 +6,7 @@
 Code for the paper:  
 
 [A Study of Face Obfuscation in ImageNet](https://arxiv.org/abs/2103.06191)  
-[Kaiyu Yang](https://www.cs.princeton.edu/~kaiyuy/), [Jacqueline Yau](https://www.linkedin.com/in/jacqueline-yau-836b0a132/), [Li Fei-Fei](https://profiles.stanford.edu/fei-fei-li), [Jia Deng](https://www.cs.princeton.edu/~jiadeng/), and [Olga Russakovsky](https://www.cs.princeton.edu/~olgarus/)    
+[Kaiyu Yang](https://yangky11.github.io/), [Jacqueline Yau](https://www.linkedin.com/in/jacqueline-yau-836b0a132/), [Li Fei-Fei](https://profiles.stanford.edu/fei-fei-li), [Jia Deng](https://www.cs.princeton.edu/~jiadeng/), and [Olga Russakovsky](https://www.cs.princeton.edu/~olgarus/)    
 
 
  ```bibtex
